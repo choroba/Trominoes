@@ -217,14 +217,16 @@ sub dsay   { #say @_
                         my ($dgy, $dgx) = unpack 'C2', (keys %d)[0];
                         for my $yx (keys %inside) {
                             my ($y1, $x1) = unpack 'C2', $yx;
-                            if (1 == abs($dgy - $y1)
-                                && 1 == abs($dgx - $x1)
-                            ) {
+                            my $dist1 = abs($dgy - $y1);
+                            my $dist2 = abs($dgx - $x1);
+                            if (1 == $dist1 && 1 == $dist2) {
                                 @{ $self->diagonal }{"$dgy $dgx", "$y1 $x1"}
                                     = ();
                                 die 'Too many diagonals '
                                      . join ',', keys %{ $self->diagonal }
                                      if 2 < keys %{ $self->diagonal };
+                            } elsif ($dist1 + $dist2 < 2) {
+                                die 'Too close';
                             }
                         }
                     }
