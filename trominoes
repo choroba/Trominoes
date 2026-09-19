@@ -286,34 +286,56 @@ my $solved = 'Thread::Queue'->new;
 
 
 my @w = map threads->create(sub{
-    while (defined (my $nstring = $in->dequeue)) {
-        my $t = TrominoGrid->new(config => $nstring);
+    while (defined (my $string = $in->dequeue)) {
+        my $t = TrominoGrid->new(config => $string);
         if (eval { $t->_build_grid;
-                   say("STR: '$nstring'"), $t->show if 63 < length $nstring;
+                   say("STR: '$string'"), $t->show if 63 < length $string;
                    1}) {
-            if (63 < length $nstring) {
-                $solved->enqueue($nstring);
+            if (63 < length $string) {
+                $solved->enqueue($string);
+                $out->enqueue('z');
             } else {
-                $out->enqueue($nstring);
+                $out->enqueue($string);
             }
         } else {
             main::dprint $@;
+            $out->enqueue('z');
         }
     }
 }), 1 .. 8;
 
-
 my $size = 0;
-while (defined( my $valid = $out->dequeue )) {
-    if ($size < length $valid) {
-        warn time - $^T, ' ', $size = length $valid, "\n";
+my $sent = 1;
+while ($size < 64) {
+    my @valids;
+    while ($sent--) {
+        my $valid = $out->dequeue;
+        push @valids, $valid if 'z' ne $valid;
     }
-    for my $ord (33 .. 96) {
-        my $char = chr $ord;
-        my $nstring = $valid . $char;
-        $in->enqueue($nstring);
+    last unless @valids;
+
+    $size = length $valids[0];
+    $sent = 0;
+
+    for my $valid (@valids) {
+        for my $ord (33 .. 96) {
+            my $char = chr $ord;
+            my $string = $valid . $char;
+            $in->enqueue($string);
+            ++$sent;
+        }
     }
+    warn join ' ', $size, time - $^T, , scalar @valids, $sent;
 }
+
+$in->end;
+$_->join for @w;
+$solved->end;
+
+while (my $s = $solved->dequeue) {
+    say "< $s >";
+}
+
 
 __END__
 # STR: '2B3C4D2B;R<S:T;RK[L\JZK[<2B3C4D!L\R@S>T?3CP`N^O_<S:3C8H>L\JZSXN^'
