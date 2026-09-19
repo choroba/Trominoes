@@ -1,0 +1,294 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+use feature qw{ say };
+use experimental qw( signatures );
+
+use List::Util qw{ shuffle };
+
+use Data::Dumper;
+
+=head1 DESCRIPTION
+
+I tried to find non-trivial solutions on a deficient 8×8 grid covered with
+trominoes and I regret to say that after extensive efforts I found only two
+non-trivial solutions:
+
+The conditions of covering such a grid with trominoes are the following: In
+total we have 21 L-shaped trominoes with 3 different colors. There are equal
+numbers of trominoes of each color. Placing the trominoes on the grid, no 2
+trominoes of the same color are allowed to touch each other anywhere, except
+only once, corner to corner (highlighted by red lines in the diagram).
+
+Solutions from rotations and reflections are trivial. Does anyone know how to
+obtain more non-trivial solutions? Please include the full 8X8 grid in your
+answers.
+
+=cut
+
+
+sub dprint { #print @_
+}
+sub dsay   { #say @_
+}
+
+
+{   package TrominoGrid;
+    use Moo;
+    use experimental qw( signatures );
+
+    use Term::ANSIColor qw{ colored };
+    use namespace::clean;
+
+    has config => (is => 'ro');
+    has grid => (is => 'lazy', writer => '_set_grid');
+
+    {   my @COLOURS = ('red on_black', 'black on_green', 'white on_magenta',
+                       'green on_blue', 'bright_black on_black' );
+        sub show($self) {
+            for my $y (0 .. 7) {
+                say map colored([$COLOURS[$_]], $_),
+                    map +($_ // 0) % 8,
+                    @{ $self->grid->[$y] };
+            }
+            print "\n"
+        }
+    }
+
+    # 4 .. colour (0 == hole)
+    # 4 .. rotation
+    # 4 .. what part (from left from top, 0 == hole)
+
+    {   my @ROTATIONS = ([[0, -1], [1, 0]], [[1, 0], [0, 1]],
+                         [[0, 1], [-1, 0]], [[-1, 0], [0, -1]]);
+        #   XX   XX   X     X
+        #    X   X    XX   XX
+
+        my %PART;
+        my %P2R;
+        for my $ri (0 .. $#ROTATIONS) {
+            my %coord = ('1 1' => undef);
+            for my $part (@{ $ROTATIONS[$ri] }) {
+                undef $coord{ join ' ', map $_ + 1, @$part };
+            }
+            my $n = 1;
+            for my $y (0 .. 2) {
+                for my $x (0 .. 2) {
+                    if (exists $coord{"$y $x"}) {
+                        $P2R{$ri}{$n} = [$y - 1, $x - 1];
+                        $PART{$ri}{ $y - 1 }{ $x - 1 } = $n;
+                        ++$n;
+                    }
+                }
+            }
+        }
+
+        sub _parse_char($self, $char) {
+            my $n = ord $char;
+            $n -= ord '!';
+            my $colour = $n % 4;
+
+            $n >>= 2;
+            my $ri = $n % 4;
+
+            $n >>= 2;
+            my $part = $n;
+            return $colour, $ri, $part
+        }
+
+        sub _build_grid($self) {
+            my @grid = TrominoGrid::F::empty();
+            my ($y, $x) = (0, 0);
+            die "Invalid char ", ord $1 if $self->config =~ /([^!-`])/;
+
+            my $holes = 0;
+            my %diagonal;
+            my %colour;
+            for my $char (split //, $self->config) {
+                my ($colour, $ri, $part) = $self->_parse_char($char);
+                main::dsay "$y:$x C:$colour R:$ri P:$part";
+
+                if (0 == $colour) {
+                    die "Too many holes $x:$y" if ++$holes > 1;
+                    $colour = 4;
+                }
+                die "No rotations for holes" if $ri && 4 == $colour;
+                die 'No parts for holes' if $part && 4 == $colour;
+                die 'No holes for colours' if 0 == $part && 4 != $colour;
+
+                if ($grid[$y][$x]) {
+                    die "Colour conflict A $y:$x " . $grid[$y][$x]
+                        . " != $colour"
+                        if $grid[$y][$x] != $colour;
+                }
+
+                if (4 == $colour) {
+                    $grid[$y][$x] = 4;
+
+                } else {
+                    my $cy = $y - $P2R{$ri}{$part}[0];
+                    my $cx = $x - $P2R{$ri}{$part}[1];
+
+                    for my $dy1 (keys %{ $PART{$ri} }) {
+                        for my $dx1 (keys %{ $PART{$ri}{$dy1} }) {
+                            my $y1 = $cy + $dy1;
+                            my $x1 = $cx + $dx1;
+                            die "$ri $x1:$y1 out of grid"
+                                if $y1 < 0 || $x1 < 0 || $y1 > 7 || $x1 > 7;
+
+                            die "Colour conflict B $y1:$x1 " . $grid[$y1][$x1]
+                                . " != $colour"
+                                if $grid[$y1][$x1]
+                                && $grid[$y1][$x1] != $colour;
+
+                            my $pos = $x1 + $y1 * 8;
+                            if ($pos < length $self->config) {
+                                my $c = substr $self->config, $pos, 1;
+                                my ($clr, $roti, $p) = $self->_parse_char($c);
+                                die "Unexpected color $clr != $colour"
+                                    if $clr != $colour;
+                                die "Unexpected rotation $roti != $ri"
+                                    if $roti != $ri;
+                            }
+
+                            $grid[$y1][$x1] = $colour;
+                        }
+                    }
+
+                    my %around;
+                    for my $ds ([0, 0], @{ $ROTATIONS[$ri] }) {
+                        my $y1 = $cy + $ds->[0];
+                        my $x1 = $cx + $ds->[1];
+                        for my $dy (-1 .. 1) {
+                            my $y2 = $y1 + $dy;
+                            next if $y2 < 0 || $y2 > 7;
+
+                            for my $dx (-1 .. 1) {
+                                my $x2 = $x1 + $dx;
+                                next if $x2 < 0 || $x2 > 7;
+
+                                undef $around{$y2}{$x2};
+                            }
+                        }
+                    }
+
+                    for my $j (-2 .. 2) {
+                        for my $i (-2 .. 2) {
+                            main::dprint exists $around{$cy+$j}{$cx+$i}
+                                         ? 'X' : '.';
+                        }
+                        main::dprint "\n";
+                    }
+                    my $same_colour = $grid[$cy][$cx] ? -3 : 0;
+                    my $same_colour_wo_diag = $same_colour;
+                    for my $y1 (keys %around) {
+                        for my $x1 (keys %{ $around{$y1} }) {
+                            if ($grid[$y1][$x1] == $colour) {
+                                main::dsay "Same $y1:$x1 ($same_colour)";
+                                ++$same_colour;
+                                die "Neighbours $y1:$x1 $same_colour"
+                                    if $same_colour > 1;
+                            }
+                        }
+                    }
+
+                    SQUARE:
+                    for my $sqc ([-1, -1], [-1, 0], [0, -1], [0, 0]) {
+                        my %d;
+                        my $y1 = $y + $sqc->[0];
+                        my $x1 = $x + $sqc->[1];
+                        for my $dy (0, 1) {
+                            for my $dx (0, 1) {
+                                my $y2 = $y1 + $dy;
+                                next SQUARE if $y2 < 0 || $y2 > 7;
+
+                                my $x2 = $x1 + $dx;
+                                next SQUARE if $x2 < 0 || $x2 > 7;
+
+                                undef $d{"$y2 $x2"}
+                                    if $grid[$y2][$x2]
+                                    && $grid[$y2][$x2] == $colour;
+                            }
+                        }
+                        if (2 == keys %d) {
+                            my @c = map [split], keys %d;
+                            if ($c[0][0] != $c[1][0] && $c[0][1] != $c[1][1]) {
+                                #warn("D ", join ',', keys %diagonal),
+                                undef @diagonal{ keys %d };
+                                die 'Two diagonals ', join ',', keys %diagonal
+                                    if keys %diagonal > 2;
+                            }
+                        }
+                    }
+
+                    if ($x == $cx && $y == $cy) {
+                        die "Too many of same colour"
+                            if ++$colour{$colour} > 7;
+                    }
+                }
+
+                if (++$x > 7) {
+                    $x = 0;
+                    ++$y;
+                }
+            }
+            return \@grid
+        }
+    }
+}
+
+{   package TrominoGrid::F;
+    sub empty {
+        return map [(0) x 8], 1 .. 8
+    }
+
+    sub encode($col, $ri, $part) {
+        return chr($col + $ri * 4 + $part * 16 + ord '!')
+    }
+
+}
+
+my @agenda = ('!', '2', '6', '9');
+# @agenda = join "", map TrominoGrid::F::encode(@$_),
+#     [1,0,1],[1,0,2],[2,0,1],[2,0,2],[3,0,1],[3,0,2],[1,0,1],[1,0,2],
+#     [2,2,1],[1,0,3],[3,2,1],[2,0,3],[1,2,1],[3,0,3],[2,2,1],[1,0,3],
+#     [2,2,2],[2,2,3],[3,2,2],[3,2,3],[1,2,2],[1,2,3],[2,2,2],[2,2,3],
+#     [3,2,1],[1,0,1],[1,0,2],[2,0,1],[2,0,2],[3,0,1],[3,0,2],[0,0,0],
+#     [3,2,2],[3,2,3],[1,0,3],[3,3,1],[2,0,3],[1,3,1],[3,0,3],[2,3,1],
+#     [2,0,1],[2,0,2],[3,3,2],[3,3,3],[1,3,2],[1,3,3],[2,3,2],[2,3,3],
+#     [3,2,1],[2,0,3],[1,2,1];
+
+while (@agenda) {
+    my @next;
+    for my $string (@agenda) {
+        for my $ord (33 .. 96) {
+            my $char = chr $ord;
+            my $nstring = $string . $char;
+            my $t = TrominoGrid->new(config => $nstring);
+            if (eval { $t->_build_grid;
+                       say("STR: '$nstring'"), $t->show if 1 < length $nstring;
+                       1}) {
+                push @next, $nstring;
+                #sleep 1;
+            } else {
+                main::dprint $@;
+            }
+        }
+    }
+    @agenda = @next;
+    warn time - $^T, ' Size: ', scalar @agenda;# sleep 1;
+}
+
+__END__
+# STR: '2B3C4D2B;R<S:T;RK[L\JZK[<2B3C4D!L\R@S>T?3CP`N^O_<S:3C8H>L\JZSXN^'
+#
+# my $t = TrominoGrid->new(grid => [[qw( 1 1 2 2 3 3 1 1 )],
+#                                   [qw( 2 1 3 2 1 3 2 1 )],
+#                                   [qw( 2 2 3 3 1 1 2 2 )],
+#                                   [qw( 3 1 1 2 2 3 3 4 )],
+#                                   [qw( 3 3 1 3 2 1 3 2 )],
+#                                   [qw( 2 2 3 3 1 1 2 2 )],
+#                                   [qw( 3 2 1 2 2 3 3 1 )],
+#                                   [qw( 3 3 1 1 2 3 1 1 )]]);
+
+# $t->show;
