@@ -280,44 +280,39 @@ sub dsay   { #say @_
 #     [2,0,1],[2,0,2],[3,3,2],[3,3,3],[1,3,2],[1,3,3],[2,3,2],[2,3,3],
 #     [3,2,1],[2,0,3],[1,2,1];
 
-my @agenda = ("");
-while (@agenda) {
-    my $in = 'Thread::Queue'->new;
-    my $out = 'Thread::Queue'->new;
-    my @w = map threads->create(sub{
-        while (my $nstring = $in->dequeue) {
-            my $t = TrominoGrid->new(config => $nstring);
-            if (eval { $t->_build_grid;
-                       say("STR: '$nstring'"), $t->show if 63 < length $nstring;
-                       1}) {
-                $out->enqueue($nstring);
-            } else {
-                main::dprint $@;
-            }
-        }
-    }), 1 .. 8;
+my $in = 'Thread::Queue'->new;
+my $out = 'Thread::Queue'->new("");
+my $solved = 'Thread::Queue'->new;
 
-    for my $string (@agenda) {
-        for my $ord (33 .. 96) {
-            my $char = chr $ord;
-            my $nstring = $string . $char;
-            $in->enqueue($nstring);
+
+my @w = map threads->create(sub{
+    while (defined (my $nstring = $in->dequeue)) {
+        my $t = TrominoGrid->new(config => $nstring);
+        if (eval { $t->_build_grid;
+                   say("STR: '$nstring'"), $t->show if 63 < length $nstring;
+                   1}) {
+            if (63 < length $nstring) {
+                $solved->enqueue($nstring);
+            } else {
+                $out->enqueue($nstring);
+            }
+        } else {
+            main::dprint $@;
         }
     }
-    $in->end;
-    my @new;
-    while (@w != threads->list(threads::joinable)) {
-        my $s = $out->dequeue_nb;
-        push @new, $s if $s;
+}), 1 .. 8;
+
+
+my $size = 0;
+while (defined( my $valid = $out->dequeue )) {
+    if ($size < length $valid) {
+        warn time - $^T, ' ', $size = length $valid, "\n";
     }
-    $_->join for @w;
-    if (@new) {
-        @agenda = @new;
-    } else {
-        say for @agenda;
-        exit
+    for my $ord (33 .. 96) {
+        my $char = chr $ord;
+        my $nstring = $valid . $char;
+        $in->enqueue($nstring);
     }
-    warn time - $^T, ' Size: ', scalar @agenda;
 }
 
 __END__
