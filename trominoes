@@ -8,6 +8,9 @@ use List::Util qw{ shuffle };
 
 use Data::Dumper;
 
+use threads stack_size => 2 ** 15;
+use Thread::Queue;
+
 =head1 DESCRIPTION
 
 I tried to find non-trivial solutions on a deficient 8×8 grid covered with
@@ -267,8 +270,7 @@ sub dsay   { #say @_
 
 }
 
-my @agenda = ('!', '2', '6', ':');
-@agenda = ("");
+
 # @agenda = join "", map TrominoGrid::F::encode(@$_),
 #     [1,0,1],[1,0,2],[2,0,1],[2,0,2],[3,0,1],[3,0,2],[1,0,1],[1,0,2],
 #     [2,2,1],[1,0,3],[3,2,1],[2,0,3],[1,2,1],[3,0,3],[2,2,1],[1,0,3],
@@ -278,25 +280,44 @@ my @agenda = ('!', '2', '6', ':');
 #     [2,0,1],[2,0,2],[3,3,2],[3,3,3],[1,3,2],[1,3,3],[2,3,2],[2,3,3],
 #     [3,2,1],[2,0,3],[1,2,1];
 
+my @agenda = ("");
 while (@agenda) {
-    my @next;
-    for my $string (@agenda) {
-        for my $ord (33 .. 96) {
-            my $char = chr $ord;
-            my $nstring = $string . $char;
+    my $in = 'Thread::Queue'->new;
+    my $out = 'Thread::Queue'->new;
+    my @w = map threads->create(sub{
+        while (my $nstring = $in->dequeue) {
             my $t = TrominoGrid->new(config => $nstring);
             if (eval { $t->_build_grid;
                        say("STR: '$nstring'"), $t->show if 63 < length $nstring;
                        1}) {
-                push @next, $nstring;
-                #sleep 1;
+                $out->enqueue($nstring);
             } else {
                 main::dprint $@;
             }
         }
+    }), 1 .. 8;
+
+    for my $string (@agenda) {
+        for my $ord (33 .. 96) {
+            my $char = chr $ord;
+            my $nstring = $string . $char;
+            $in->enqueue($nstring);
+        }
     }
-    @agenda = @next;
-    warn time - $^T, ' Size: ', scalar @agenda;# sleep 1;
+    $in->end;
+    my @new;
+    while (@w != threads->list(threads::joinable)) {
+        my $s = $out->dequeue_nb;
+        push @new, $s if $s;
+    }
+    $_->join for @w;
+    if (@new) {
+        @agenda = @new;
+    } else {
+        say for @agenda;
+        exit
+    }
+    warn time - $^T, ' Size: ', scalar @agenda;
 }
 
 __END__
