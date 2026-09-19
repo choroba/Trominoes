@@ -166,7 +166,7 @@ sub dsay   { #say @_
                         my $x1 = $cx + $ds->[1];
                         next if $x1 < 0 || $x1 > 7;
 
-                        undef $inside{"$y1 $x1"};
+                        undef $inside{ pack 'C2', $y1, $x1 };
 
                         for my $dy (-1 .. 1) {
                             my $y2 = $y1 + $dy;
@@ -176,7 +176,7 @@ sub dsay   { #say @_
                                 my $x2 = $x1 + $dx;
                                 next if $x2 < 0 || $x2 > 7;
 
-                                undef $around{"$y2 $x2"};
+                                undef $around{ pack 'C2', $y2, $x2 };
                             }
                         }
                     }
@@ -184,7 +184,7 @@ sub dsay   { #say @_
 
                     my $same_colour = 0;
                     for my $yx (keys %around) {
-                        my ($y1, $x1) = split / /, $yx;
+                        my ($y1, $x1) = unpack 'C2', $yx;
                         if ($grid[$y1][$x1] == $colour) {
                             main::dsay "Same $y1:$x1 ($same_colour)";
                             ++$same_colour;
@@ -196,24 +196,27 @@ sub dsay   { #say @_
                     if (1 == $same_colour) {
                         my %non_diag_around = %around;
                         for my $yx (keys %inside) {
-                            my ($y1, $x1) = split / /, $yx;
+                            my ($y1, $x1) = unpack 'C2', $yx;
                             for my $d (-1, 1) {
                                 my $y2 = $y1 + $d;
-                                delete $non_diag_around{"$y2 $x1"};
+                                delete $non_diag_around{ pack 'C2', $y2, $x1 }
+                                    if $y2 > 0;
                                 my $x2 = $x1 + $d;
-                                delete $non_diag_around{"$y1 $x2"};
+                                delete $non_diag_around{ pack 'C2', $y1, $x2 }
+                                    if $x2 > 0;
                             }
                         }
                         my %d;
                         for my $yx (keys %non_diag_around) {
-                            my ($y1, $x1) = split / /, $yx;
-                            undef $d{"$y1 $x1"} if $grid[$y1][$x1] == $colour;
+                            my ($y1, $x1) = unpack 'C2', $yx;
+                            undef $d{ pack 'C2', $y1, $x1 }
+                                if $grid[$y1][$x1] == $colour;
                         }
                         die 'Non diagonal neighbour' if ! keys %d;
 
-                        my ($dgy, $dgx) = split / /, (keys %d)[0];
+                        my ($dgy, $dgx) = unpack 'C2', (keys %d)[0];
                         for my $yx (keys %inside) {
-                            my ($y1, $x1) = split / /, $yx;
+                            my ($y1, $x1) = unpack 'C2', $yx;
                             if (1 == abs($dgy - $y1)
                                 && 1 == abs($dgx - $x1)
                             ) {
@@ -271,7 +274,7 @@ while (@agenda) {
             my $nstring = $string . $char;
             my $t = TrominoGrid->new(config => $nstring);
             if (eval { $t->_build_grid;
-                       say("STR: '$nstring'"), $t->show if 1 < length $nstring;
+                       say("STR: '$nstring'"), $t->show if 63 < length $nstring;
                        1}) {
                 push @next, $nstring;
                 #sleep 1;
