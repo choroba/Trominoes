@@ -105,7 +105,6 @@ sub dsay   { #say @_
         sub _build_grid($self) {
             my @grid = TrominoGrid::F::empty();
             my ($y, $x) = (0, 0);
-            die "Invalid char ", ord $1 if $self->config =~ /([^!-`])/;
 
             my $holes = 0;
             my %colour;
