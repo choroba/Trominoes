@@ -1,0 +1,77 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+use feature qw{ say };
+use experimental qw( signatures );
+
+use List::Util qw{ min };
+
+sub serialise($grid) {
+    join "", map @$_, @$grid
+}
+
+sub canonicalise($s) {
+    my $first = substr $s, 0, 1;
+    my $pos = 1;
+    ($pos, $first) = (2, substr $s, 1, 1) if '.' eq $first;
+    ++$pos while substr($s, $pos, 1) =~ /[.$first]/;
+    my $second = substr $s, $pos, 1;
+    return $s if '12' eq "$first$second";
+
+    my $third = 1;
+    ++$third while "$first$second" =~ /$third/;
+    eval "\$s =~ tr/$first$second$third/123/";
+    return $s
+}
+
+sub flip_rl($grid) { [map [reverse @$_], @$grid] }
+
+sub flip_tb($grid) { [reverse @$grid ] }
+
+sub rotate($grid) {
+    my @r;
+    for my $i (0 .. $#$grid) {
+        for my $j (0 .. $#{ $grid->[$i] }) {
+            $r[$j][$i] = $grid->[$i][$j];
+        }
+    }
+    return \@r
+}
+
+
+my %u;
+my %same;
+my @grid;
+my $i = 0;
+while (<>) {
+    chomp;
+    if ($_) {
+        push @grid, [split //];
+
+    } else {
+        undef $u{ serialise(\@grid) }{$i};
+        undef $u{ canonicalise(serialise(flip_rl(\@grid))) }{$i};
+        undef $u{ canonicalise(serialise(flip_tb(\@grid))) }{$i};
+        undef $u{ canonicalise(serialise(flip_tb(flip_rl(\@grid)))) }{$i};
+
+        my $r = rotate(\@grid);
+        undef $u{ canonicalise(serialise($r)) }{$i};
+        undef $u{ canonicalise(serialise(flip_rl($r))) }{$i};
+        undef $u{ canonicalise(serialise(flip_tb($r))) }{$i};
+        undef $u{ canonicalise(serialise(flip_rl(flip_tb($r)))) }{$i};
+
+        @grid = ();
+        ++$i;
+    }
+}
+
+for my $g (keys %u) {
+    my $v0 = min(keys %{ $u{$g} });
+    for my $v1 (keys %{ $u{$g} }) {
+            undef $same{$v0}{$v1};
+    }
+}
+for my $m (sort keys %same) {
+    say $m, ' (', scalar keys %{ $same{$m} }, ') ',
+        join ', ', sort { $a <=> $b } keys %{ $same{$m} };
+}
