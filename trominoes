@@ -13,6 +13,8 @@ use Thread::Queue;
 
 =head1 DESCRIPTION
 
+=head2 The Task
+
 I tried to find non-trivial solutions on a deficient 8×8 grid covered with
 trominoes and I regret to say that after extensive efforts I found only two
 non-trivial solutions:
@@ -27,14 +29,13 @@ Solutions from rotations and reflections are trivial. Does anyone know how to
 obtain more non-trivial solutions? Please include the full 8X8 grid in your
 answers.
 
+=head1 HOW TO RUN
+
+Run this program. Copy The output to a file, edit it to only contain the grids,
+replace 4s with dots (see C<grids>). Run C<unify grids> to see which grids are
+equivalent wrt rotation, reflection, or colour isomorphism.
+
 =cut
-
-
-sub dprint { #print @_
-}
-sub dsay   { #say @_
-}
-
 
 {   package TrominoGrid;
     use Moo;
@@ -43,9 +44,12 @@ sub dsay   { #say @_
     use Term::ANSIColor qw{ colored };
     use namespace::clean;
 
-    has config => (is => 'ro');
+    has config => (is => 'ro', trigger => \&validate_config);
     has grid => (is => 'lazy', writer => '_set_grid');
-    has diagonal => (is => 'ro', default => sub {{}});
+    has diagonal => (is => 'ro', default => sub { {} });
+    has hole_count => (is => 'rw', default => 0);
+    has count_by_colour => (is => 'ro', default => sub { {} });  # Max 7.
+    has colour_used => (is => 'ro', default => sub { {} });  # Isomorphism.
 
     {   my @COLOURS = ('red on_black', 'black on_green', 'white on_magenta',
                        'green on_blue', 'bright_black on_black' );
@@ -61,9 +65,10 @@ sub dsay   { #say @_
         }
     }
 
-    # 4 .. colour (0 == hole)
-    # 4 .. rotation
-    # 4 .. what part (from left from top, 0 == hole)
+    sub validate_config($self, $config) {
+        my $valid = join "", map quotemeta, TrominoGrid::F::valid_chars();
+        die "Invalid char $1 in $config" if $config =~ /([^$valid])/;
+    }
 
     {   my @ROTATIONS = ([[0, -1], [1, 0]], [[1, 0], [0, 1]],
                          [[0, 1], [-1, 0]], [[-1, 0], [0, -1]]);
@@ -89,42 +94,24 @@ sub dsay   { #say @_
             }
         }
 
-        sub _parse_char($self, $char) {
-            my $n = ord $char;
-            $n -= ord '!';
-            my $colour = $n % 4;
-
-            $n >>= 2;
-            my $ri = $n % 4;
-
-            $n >>= 2;
-            my $part = $n;
-            return $colour, $ri, $part
-        }
-
         sub _build_grid($self) {
             my @grid = TrominoGrid::F::empty();
             my ($y, $x) = (0, 0);
 
-            my $holes = 0;
-            my %colour;
-            my %colour_used;
             for my $char (split //, $self->config) {
-                my ($colour, $ri, $part) = $self->_parse_char($char);
-                main::dsay "$y:$x C:$colour R:$ri P:$part";
+                my ($colour, $ri, $part) = TrominoGrid::F::parse($char);
 
                 if (0 == $colour) {
-                    die "Too many holes $x:$y" if ++$holes > 1;
+                    die "Too many holes $x:$y" if 1 == $self->hole_count;
+
+                    $self->hole_count(1);
                     $colour = 4;
                 }
-                die "No rotations for holes" if $ri && 4 == $colour;
-                die 'No parts for holes' if $part && 4 == $colour;
-                die 'No holes for colours' if 0 == $part && 4 != $colour;
 
                 die 'Colour used too early'
                     if $colour > 1 && $colour < 4
-                    && ! exists $colour_used{$colour}
-                    && grep ! exists $colour_used{$_}, 1 .. $colour - 1;
+                    && ! exists $self->colour_used->{$colour}
+                    && grep ! exists $self->colour_used->{$_}, 1 .. $colour - 1;
 
                 if ($grid[$y][$x]) {
                     die "Colour conflict A $y:$x " . $grid[$y][$x]
@@ -154,7 +141,8 @@ sub dsay   { #say @_
                             my $pos = $x1 + $y1 * 8;
                             if ($pos < length $self->config) {
                                 my $c = substr $self->config, $pos, 1;
-                                my ($clr, $roti, $p) = $self->_parse_char($c);
+                                my ($clr, $roti, $p)
+                                    = TrominoGrid::F::parse($c);
                                 die "Unexpected color $clr != $colour"
                                     if $clr != $colour;
                                 die "Unexpected rotation $roti != $ri"
@@ -162,10 +150,13 @@ sub dsay   { #say @_
                             }
 
                             $grid[$y1][$x1] = $colour;
-                            undef $colour_used{$colour};
+                            undef $self->colour_used->{$colour};
                         }
                     }
 
+                    # Check there are no neighbouring trominoes of the same
+                    # colour This should be a separate method, but method call
+                    # is slow.
                     my %around;
                     my %inside;
                     for my $ds ([0, 0], @{ $ROTATIONS[$ri] }) {
@@ -176,7 +167,6 @@ sub dsay   { #say @_
                         next if $x1 < 0 || $x1 > 7;
 
                         undef $inside{ pack 'C2', $y1, $x1 };
-                        main::dsay "Inside $y1 $x1";
 
                         for my $dy (-1 .. 1) {
                             my $y2 = $y1 + $dy;
@@ -187,7 +177,6 @@ sub dsay   { #say @_
                                 next if $x2 < 0 || $x2 > 7;
 
                                 undef $around{ pack 'C2', $y2, $x2 };
-                                main::dsay "Around $y1 $x1";
                             }
                         }
                     }
@@ -197,7 +186,6 @@ sub dsay   { #say @_
                     for my $yx (keys %around) {
                         my ($y1, $x1) = unpack 'C2', $yx;
                         if ($grid[$y1][$x1] == $colour) {
-                            main::dsay "Same $y1:$x1 ($same_colour)";
                             ++$same_colour;
                             die "Neighbours $y1:$x1 $same_colour"
                                 if $same_colour > 1;
@@ -244,7 +232,7 @@ sub dsay   { #say @_
 
                     if ($x == $cx && $y == $cy) {
                         die "Too many of same colour"
-                            if ++$colour{$colour} > 7;
+                            if ++$self->count_by_colour->{$colour} > 7;
                     }
                 }
 
@@ -263,31 +251,48 @@ sub dsay   { #say @_
         return map [(0) x 8], 1 .. 8
     }
 
+    # 4 .. colour (0 == hole)
+    # 4 .. rotation
+    # 4 .. what part (from left from top, 0 == hole)
+
     sub encode($col, $ri, $part) {
         return chr($col + $ri * 4 + $part * 16 + ord '!')
     }
 
+    sub parse($char) {
+        my $n = ord $char;
+        $n -= ord '!';
+        my $colour = $n % 4;
+
+        $n >>= 2;
+        my $ri = $n % 4;
+
+        $n >>= 2;
+        my $part = $n;
+        return $colour, $ri, $part
+    }
+
+    sub valid_chars() {
+        my %valid_ord;
+        undef @valid_ord{ 33 .. 96 };
+        for my $ord (keys %valid_ord) {
+            my ($colour, $ri, $part) = TrominoGrid::F::parse(chr $ord);
+            delete $valid_ord{$ord} if $colour && ! $part
+                                    || ! $colour && ($ri || $part);
+        }
+        my @chars = sort map chr, keys %valid_ord;
+        return @chars
+    }
 }
-
-
-# @agenda = join "", map TrominoGrid::F::encode(@$_),
-#     [1,0,1],[1,0,2],[2,0,1],[2,0,2],[3,0,1],[3,0,2],[1,0,1],[1,0,2],
-#     [2,2,1],[1,0,3],[3,2,1],[2,0,3],[1,2,1],[3,0,3],[2,2,1],[1,0,3],
-#     [2,2,2],[2,2,3],[3,2,2],[3,2,3],[1,2,2],[1,2,3],[2,2,2],[2,2,3],
-#     [3,2,1],[1,0,1],[1,0,2],[2,0,1],[2,0,2],[3,0,1],[3,0,2],[0,0,0],
-#     [3,2,2],[3,2,3],[1,0,3],[3,3,1],[2,0,3],[1,3,1],[3,0,3],[2,3,1],
-#     [2,0,1],[2,0,2],[3,3,2],[3,3,3],[1,3,2],[1,3,3],[2,3,2],[2,3,3],
-#     [3,2,1],[2,0,3],[1,2,1];
 
 my $in = 'Thread::Queue'->new;
 my $out = 'Thread::Queue'->new("");
 my $solved = 'Thread::Queue'->new;
 
-
 my @w = map threads->create(sub{
     while (defined (my $string = $in->dequeue)) {
         my $t = TrominoGrid->new(config => $string);
-        if (eval { $t->_build_grid;
+        if (eval { $t->grid;
                    say("STR: '$string'"), $t->show if 63 < length $string;
                    1}) {
             if (63 < length $string) {
@@ -297,12 +302,13 @@ my @w = map threads->create(sub{
                 $out->enqueue($string);
             }
         } else {
-            main::dprint $@;
+            # print $@;  # Debugging.
             $out->enqueue('z');
         }
     }
 }), 1 .. 8;
 
+my @chars = TrominoGrid::F::valid_chars();
 my $size = 0;
 my $sent = 1;
 while ($size < 64) {
@@ -317,8 +323,7 @@ while ($size < 64) {
     $sent = 0;
 
     for my $valid (@valids) {
-        for my $ord (33 .. 96) {
-            my $char = chr $ord;
+        for my $char (@chars) {
             my $string = $valid . $char;
             $in->enqueue($string);
             ++$sent;
