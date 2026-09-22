@@ -29,6 +29,10 @@ Solutions from rotations and reflections are trivial. Does anyone know how to
 obtain more non-trivial solutions? Please include the full 8X8 grid in your
 answers.
 
+=head1 THE LINK
+
+L<https://math.stackexchange.com/questions/2746678/covering-an-8%c3%978-grid-with-three-colors-of-trominoes>
+
 =head1 HOW TO RUN
 
 Run this program. Copy The output to a file, edit it to only contain the grids,
